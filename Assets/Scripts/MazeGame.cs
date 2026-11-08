@@ -1,10 +1,7 @@
-#if UNITY_6000_0_OR_NEWER
+
 using PhysMat = UnityEngine.PhysicsMaterial;
 using PhysCombine = UnityEngine.PhysicsMaterialCombine;
-#else
-using PhysMat = UnityEngine.PhysicMaterial;
-using PhysCombine = UnityEngine.PhysicMaterialCombine;
-#endif
+
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -19,25 +16,7 @@ namespace WoodenMaze
     [DisallowMultipleComponent]
     public class MazeGame : MonoBehaviour
     {
-        [Header("Maze layout")]
-        [Tooltip("Same seed = same maze. Press N in play mode for a new random one.")]
-        public int seed = 1977;
-        [Range(4, 30)] public int width = 12;
-        [Range(4, 30)] public int height = 10;
-        [Tooltip("Share of extra walls removed so the board is open like the real game.")]
-        [Range(0f, 0.8f)] public float wallRemoval = 0.3f;
-        [Tooltip("Share of the cells off the route that become holes.")]
-        [Range(0f, 1f)] public float holeDensity = 0.6f;
-
-        [Header("Sizes (world units)")]
-        public float cellSize = 1f;
-        public float floorThickness = 0.3f;
-        [Tooltip("Must be bigger than the marble radius, or the marble rolls over the holes.")]
-        public float holeRadius = 0.35f;
-        public float wallHeight = 0.45f;
-        public float wallThickness = 0.12f;
-        public float marbleRadius = 0.27f;
-
+        /*
         [Header("Controls and physics")]
         public float maxTilt = 10f;
         public float tiltSpeed = 40f;
@@ -59,7 +38,7 @@ namespace WoodenMaze
         public bool setupCamera = true;
         [Tooltip("Pixels per cell for the painted floor texture.")]
         public int floorTextureDetail = 160;
-
+        */
         enum State { Ready, Playing, Won, Lost }
 
         State _state;
@@ -67,6 +46,7 @@ namespace WoodenMaze
         float _best;
         int _lostHole;
 
+        /*
         MazeLayout _layout;
         MazeBoard _board;
         Rigidbody _marble;
@@ -76,42 +56,41 @@ namespace WoodenMaze
         Mesh _floorMesh;
         Material _mWood, _mBox, _mFloor, _mHole, _mMarble, _mGoal;
         PhysMat _boardPhys, _marblePhys;
+        */
         Color _goalColor = new Color(1f, 0.72f, 0.18f);
 
-        const int MarbleLayer = 2; // "Ignore Raycast": lets the reflection probe skip the marble itself.
+        MazeBuilder _mazeBuilder;
 
-        float BoardW => width * cellSize;
-        float BoardH => height * cellSize;
-        const float FrameThickness = 0.3f;
-        const float FrameHeight = 0.65f;
+        
 
         // ------------------------------------------------------------------ setup
 
-        void Awake()
-        {
+        void Awake(){
+            _mazeBuilder = GetComponent<MazeBuilder>();
             Physics.gravity = Vector3.down * 9.81f * gravityMultiplier;
             holeRadius = Mathf.Max(holeRadius, marbleRadius * 1.15f);
 
-            CreateMaterials();
-            _boardPhys = MakePhysicsMaterial("Board", 0.45f, 0.15f);
-            _marblePhys = MakePhysicsMaterial("Marble", 0.45f, 0.2f);
+            //CreateMaterials();
+            //_boardPhys = MakePhysicsMaterial("Board", 0.45f, 0.15f);
+            //_marblePhys = MakePhysicsMaterial("Marble", 0.45f, 0.2f);
 
-            BuildBox();
-            BuildMarble();
-            BuildBoard();
-            SetupCameraAndLight();
+            _mazeBuilder.GenerateNewMaze();
+            //BuildBox();
+            //BuildMarble();
+            //BuildBoard();
+            //SetupCameraAndLight();
             Restart();
         }
 
-        void OnDestroy()
-        {
+        
+        void OnDestroy(){
             if (_floorTex) Destroy(_floorTex);
             if (_woodTex) Destroy(_woodTex);
             if (_boxTex) Destroy(_boxTex);
             if (_floorMesh) Destroy(_floorMesh);
         }
 
-        void CreateMaterials()
+        /*void CreateMaterials()
         {
             _woodTex = MazeTextures.CreateWood(512, 11, new Color(0.60f, 0.38f, 0.21f), new Color(0.33f, 0.19f, 0.09f));
             _boxTex = MazeTextures.CreateWood(512, 47, new Color(0.55f, 0.35f, 0.20f), new Color(0.30f, 0.17f, 0.08f));
@@ -384,6 +363,9 @@ namespace WoodenMaze
             probe.resolution = 128;
             probe.cullingMask = ~(1 << MarbleLayer);
         }
+                
+        */
+
 
         // ------------------------------------------------------------------ game loop
 
@@ -418,23 +400,20 @@ namespace WoodenMaze
             Restart();
         }
 
-        void Update()
-        {
-            if (MazeInput.QuitPressed())
-            {
-#if UNITY_EDITOR
+        void Update(){
+            if (MazeInput.QuitPressed()){
+                #if UNITY_EDITOR
                 UnityEditor.EditorApplication.isPlaying = false;
-#else
+                #else
                 Application.Quit();
-#endif
+                #endif
                 return;
             }
             if (MazeInput.NewMazePressed()) { NewMaze(); return; }
             if (MazeInput.RestartPressed()) { Restart(); return; }
 
             Vector2 keys = MazeInput.Tilt();
-            switch (_state)
-            {
+            switch (_state){
                 case State.Ready:
                     _board.input = keys;
                     if (keys != Vector2.zero) _state = State.Playing;
@@ -508,6 +487,14 @@ namespace WoodenMaze
             _marble.transform.SetParent(_board.transform, true);
         }
 
+        void Lost(){
+            _state = State.Lost;
+            // UpdateUI will show which hole it fell into, if any.
+            // Let the marble fall into the hole while the board levels out.
+            _marble.SetVelocity(Vector3.zero);
+            _marble.angularVelocity = Vector3.zero;
+            _marble.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        }
         // ------------------------------------------------------------------ UI
 
         GUIStyle _hud, _big, _small;
@@ -563,26 +550,13 @@ namespace WoodenMaze
     }
 
     /// <summary>Rigidbody API names changed in Unity 6; this keeps both versions compiling cleanly.</summary>
-    static class RigidbodyCompat
-    {
-        public static void SetVelocity(this Rigidbody rb, Vector3 v)
-        {
-#if UNITY_6000_0_OR_NEWER
-            rb.linearVelocity = v;
-#else
-            rb.velocity = v;
-#endif
-        }
+    static class RigidbodyCompat{
+        public static void SetVelocity(this Rigidbody rb, Vector3 v) => rb.linearVelocity = v;
+        
 
-        public static void SetDamping(this Rigidbody rb, float linear, float angular)
-        {
-#if UNITY_6000_0_OR_NEWER
+        public static void SetDamping(this Rigidbody rb, float linear, float angular){
             rb.linearDamping = linear;
             rb.angularDamping = angular;
-#else
-            rb.drag = linear;
-            rb.angularDrag = angular;
-#endif
         }
     }
 }
